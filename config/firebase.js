@@ -1,17 +1,19 @@
-const admin = require('firebase-admin');
+const { initializeApp, getApps, cert } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
 
 const initFirebase = () => {
-  if (admin.apps.length) return;
+  if (getApps().length) return;
 
   const serviceAccount = JSON.parse(
     Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('utf8')
   );
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
+  initializeApp({ credential: cert(serviceAccount) });
 
   console.log('Firebase Admin initialized');
 };
+
+// Compatibility shim so existing callers keep working as admin.auth().verifyIdToken(...)
+const admin = { auth: () => getAuth() };
 
 module.exports = { admin, initFirebase };

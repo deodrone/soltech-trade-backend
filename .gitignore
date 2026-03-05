@@ -1,2 +1,10 @@
 node_modules/
 .env
+deploy.zip
+*.log
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+!.elasticbeanstalk/nodecommand.config

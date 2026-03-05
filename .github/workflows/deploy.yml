@@ -1,0 +1,30 @@
+name: Deploy Backend to Elastic Beanstalk
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create deployment zip (EB runs npm install — no node_modules needed)
+        run: |
+          zip -r deploy.zip . \
+            --exclude "*.git*" \
+            --exclude "node_modules/*" \
+            --exclude ".env" \
+            --exclude "*.log"
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: soltech-trade-backend
+          environment_name: soltech-trade-backend-env
+          region: us-east-1
+          version_label: "deploy-${{ github.sha }}"
+          deployment_package: deploy.zip
