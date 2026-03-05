@@ -108,6 +108,7 @@ app.use('/api/copy-trade',  require('./routes/copyTrade'));
 app.use('/api/analytics',   require('./routes/analytics'));
 app.use('/api/launchpad',   require('./routes/launchpad'));
 app.use('/api/premium',     require('./routes/premium'));
+app.use('/api/referral',    require('./routes/referral'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
