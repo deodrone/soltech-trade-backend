@@ -19,6 +19,7 @@ const connectDB   = require('./config/db');
 const { initFirebase, admin } = require('./config/firebase');
 const alertChecker  = require('./jobs/alertChecker');
 const slTpChecker   = require('./jobs/slTpChecker');
+const liveFeeds     = require('./jobs/liveFeeds');
 
 const app    = express();
 
@@ -184,7 +185,16 @@ function pushToUser(uid, payload) {
   });
 }
 
+// Broadcast to all connected WebSocket clients (for market-wide events)
+function broadcast(payload) {
+  const msg = JSON.stringify(payload);
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+  });
+}
+
 app.locals.pushToUser = pushToUser;
+app.locals.broadcast  = broadcast;
 app.locals.wss        = wss;
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -197,6 +207,7 @@ const start = async () => {
     console.log(JSON.stringify({ event: 'server_start', port: PORT, env: process.env.NODE_ENV }));
     alertChecker.start(pushToUser);
     slTpChecker.start(pushToUser);
+    liveFeeds.start(broadcast);
   });
 };
 
@@ -207,6 +218,7 @@ function shutdown(signal) {
   console.log(JSON.stringify({ event: 'shutdown', signal }));
   alertChecker.stop();
   slTpChecker.stop();
+  liveFeeds.stop();
   server.close(() => {
     console.log(JSON.stringify({ event: 'server_closed' }));
     process.exit(0);
