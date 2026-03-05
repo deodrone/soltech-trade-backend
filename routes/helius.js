@@ -12,10 +12,14 @@ const SOLANA_ADDR = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 // Allowed JSON-RPC methods to prevent arbitrary RPC abuse
 const ALLOWED_METHODS = new Set([
+  // Asset / account reads
   'getAssetsByOwner', 'getAsset', 'getAssetBatch',
   'getTransaction', 'getBalance', 'getTokenAccountsByOwner',
   'getParsedTokenAccountsByOwner', 'getAccountInfo',
   'getTokenLargestAccounts', 'getTokenSupply',
+  // Transaction lifecycle (needed by @solana/web3.js Connection)
+  'getLatestBlockhash', 'sendTransaction', 'getSignatureStatuses',
+  'getBlockHeight', 'getSlot',
 ]);
 
 const heliusLimiter = rateLimit({
