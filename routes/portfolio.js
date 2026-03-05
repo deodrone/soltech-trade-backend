@@ -1,12 +1,22 @@
 const express = require('express');
 const axios = require('axios');
+const { rateLimit } = require('express-rate-limit');
 const router = express.Router();
 
-const HELIUS_KEY = process.env.HELIUS_API_KEY;
-const HELIUS_API = `https://api.helius.xyz/v0`;
+const HELIUS_KEY    = process.env.HELIUS_API_KEY;
+const HELIUS_API    = 'https://api.helius.xyz/v0';
 const JUPITER_PRICE = 'https://api.jup.ag/price/v2';
+const SOLANA_ADDR   = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
-const SOLANA_ADDR = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+// Portfolio fetches are expensive (Helius + Jupiter) — limit to 20 req/min per IP
+const portfolioLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many portfolio requests, please wait.' },
+});
+router.use(portfolioLimiter);
 
 // GET /api/portfolio/:wallet
 router.get('/:wallet', async (req, res) => {

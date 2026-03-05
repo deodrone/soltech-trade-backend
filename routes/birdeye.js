@@ -72,6 +72,34 @@ router.get('/trending_tokens/:chain', async (req, res) => {
   } catch (e) { res.status(e.response?.status || 500).json({ error: e.message }); }
 });
 
+// ── Recent token trades ───────────────────────────────────────────────────────
+router.get('/trades', async (req, res) => {
+  const { address, limit = 30 } = req.query;
+  if (!address || !SOLANA_ADDR.test(address)) return res.status(400).json({ error: 'Invalid address' });
+  try {
+    const { data } = await axios.get(`${BASE}/defi/txs/token`, {
+      headers: birdeyeHeaders(),
+      params: { address, tx_type: 'swap', offset: 0, limit: Math.min(parseInt(limit), 50) },
+      timeout: 10000,
+    });
+    res.json(data);
+  } catch (e) { res.status(e.response?.status || 500).json({ error: e.message }); }
+});
+
+// ── Wallet transaction list ───────────────────────────────────────────────────
+router.get('/wallet_tx_list', async (req, res) => {
+  const { wallet, limit = 50 } = req.query;
+  if (!wallet || !SOLANA_ADDR.test(wallet)) return res.status(400).json({ error: 'Invalid wallet' });
+  try {
+    const { data } = await axios.get(`${BASE}/v1/wallet/tx_list`, {
+      headers: birdeyeHeaders(),
+      params: { wallet, limit: Math.min(parseInt(limit), 100) },
+      timeout: 10000,
+    });
+    res.json(data);
+  } catch (e) { res.status(e.response?.status || 500).json({ error: e.message }); }
+});
+
 // ── Wallet token list ─────────────────────────────────────────────────────────
 router.get('/v1/wallet/token_list', async (req, res) => {
   const { wallet } = req.query;

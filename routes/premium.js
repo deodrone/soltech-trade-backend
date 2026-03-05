@@ -2,6 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const axios   = require('axios');
 const Subscription = require('../models/Subscription');
+const { verifyToken } = require('../middleware/auth');
 
 const PLATFORM_WALLET  = process.env.PLATFORM_WALLET  || '';
 const SUBSCRIPTION_SOL = parseFloat(process.env.SUBSCRIPTION_PRICE_SOL || '0.05');
@@ -27,9 +28,14 @@ router.get('/status', async (req, res) => {
 });
 
 // ── POST /api/premium/subscribe ─────────────────────────────────────────────
-router.post('/subscribe', async (req, res) => {
+router.post('/subscribe', verifyToken, async (req, res) => {
   const { wallet, txid } = req.body;
   if (!wallet || !txid) return res.status(400).json({ error: 'wallet and txid required' });
+
+  // Basic format guards
+  if (typeof txid !== 'string' || txid.length < 44 || txid.length > 128) {
+    return res.status(400).json({ error: 'Invalid txid' });
+  }
 
   try {
     // Check not already registered
@@ -41,7 +47,10 @@ router.post('/subscribe', async (req, res) => {
     if (!verified) return res.status(400).json({ error: 'Payment not verified on-chain' });
 
     const expiresAt = new Date(Date.now() + SUBSCRIPTION_DAYS * 86400 * 1000);
-    const sub = await Subscription.create({ wallet, txid, paidSol: SUBSCRIPTION_SOL, expiresAt, verified: true });
+    const sub = await Subscription.create({
+      userId: req.user.uid,
+      wallet, txid, paidSol: SUBSCRIPTION_SOL, expiresAt, verified: true,
+    });
     res.json({ active: true, expiresAt: sub.expiresAt });
   } catch (e) {
     res.status(500).json({ error: e.message });

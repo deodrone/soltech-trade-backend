@@ -88,10 +88,10 @@ async function runCheck() {
     }
 
     if (triggered.length) {
-      console.log(`[alertChecker] Triggered ${triggered.length} alert(s)`);
+      console.log(JSON.stringify({ event: 'alerts_triggered', count: triggered.length }));
     }
   } catch (e) {
-    console.error('[alertChecker] Error:', e.message);
+    console.error(JSON.stringify({ event: 'alert_checker_error', error: e.message }));
   }
 }
 
@@ -102,7 +102,7 @@ function start(pushFn) {
     runCheck();
     timer = setInterval(runCheck, CHECK_INTERVAL_MS);
   }, 10000);
-  console.log('[alertChecker] Started — checking every 30s');
+  console.log(JSON.stringify({ event: 'alert_checker_start', intervalMs: CHECK_INTERVAL_MS }));
 }
 
 function stop() {

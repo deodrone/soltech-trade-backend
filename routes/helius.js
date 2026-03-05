@@ -15,6 +15,7 @@ const ALLOWED_METHODS = new Set([
   'getAssetsByOwner', 'getAsset', 'getAssetBatch',
   'getTransaction', 'getBalance', 'getTokenAccountsByOwner',
   'getParsedTokenAccountsByOwner', 'getAccountInfo',
+  'getTokenLargestAccounts', 'getTokenSupply',
 ]);
 
 const heliusLimiter = rateLimit({
@@ -64,6 +65,23 @@ router.get('/tokens/:address', async (req, res) => {
   try {
     const url = `${HELIUS_API}/addresses/${address}/balances?api-key=${HELIUS_KEY}`;
     const { data } = await axios.get(url, { timeout: 15000 });
+    res.json(data);
+  } catch (e) {
+    res.status(e.response?.status || 500).json({ error: e.message });
+  }
+});
+
+// Proxy parsed transactions (enriched — used for portfolio TX details)
+router.post('/parsed-transactions', async (req, res) => {
+  const { signatures } = req.body;
+  if (!Array.isArray(signatures) || signatures.length === 0) {
+    return res.status(400).json({ error: 'signatures array required' });
+  }
+  const safe = signatures.slice(0, 100).filter(s => typeof s === 'string' && /^[A-Za-z0-9]{43,88}$/.test(s));
+  if (!safe.length) return res.status(400).json({ error: 'No valid signatures' });
+  try {
+    const url = `${HELIUS_API}/transactions?api-key=${HELIUS_KEY}`;
+    const { data } = await axios.post(url, { transactions: safe }, { timeout: 15000 });
     res.json(data);
   } catch (e) {
     res.status(e.response?.status || 500).json({ error: e.message });

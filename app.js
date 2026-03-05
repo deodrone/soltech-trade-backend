@@ -1,25 +1,39 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
+
+// ── Environment validation ────────────────────────────────────────────────────
+const REQUIRED_ENV = ['MONGODB_URI', 'FIREBASE_SERVICE_ACCOUNT', 'HELIUS_API_KEY', 'BIRDEYE_API_KEY'];
+const missing = REQUIRED_ENV.filter(k => !process.env[k]);
+if (missing.length) {
+  console.error(`[startup] Missing required environment variables: ${missing.join(', ')}`);
+  process.exit(1);
+}
+
+const express     = require('express');
+const cors        = require('cors');
+const helmet      = require('helmet');
+const compression = require('compression');
 const mongoSanitize = require('express-mongo-sanitize');
 const { rateLimit } = require('express-rate-limit');
-const http = require('http');
-const WebSocket = require('ws');
-const connectDB = require('./config/db');
+const http        = require('http');
+const WebSocket   = require('ws');
+const connectDB   = require('./config/db');
 const { initFirebase, admin } = require('./config/firebase');
-const alertChecker = require('./jobs/alertChecker');
+const alertChecker  = require('./jobs/alertChecker');
+const slTpChecker   = require('./jobs/slTpChecker');
 
-const app = express();
+const app    = express();
 const server = http.createServer(app);
 
-// ── Security headers ─────────────────────────────────────────────────────────
+// ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet({
-  contentSecurityPolicy: false, // Managed by frontend (Netlify headers)
+  contentSecurityPolicy: false,       // managed by Netlify headers
   crossOriginEmbedderPolicy: false,
 }));
 
-// ── CORS — allow localhost dev + deployed frontend URLs ──────────────────────
+// ── Gzip compression ──────────────────────────────────────────────────────────
+app.use(compression());
+
+// ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
   'http://localhost:8080',
   'http://localhost:3000',
@@ -35,65 +49,90 @@ app.use(cors({
   credentials: true,
 }));
 
-// ── Body parsing — limit size to prevent payload attacks ────────────────────
+// ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50kb' }));
 app.use(express.urlencoded({ extended: false, limit: '50kb' }));
 
-// ── MongoDB injection sanitization ──────────────────────────────────────────
+// ── MongoDB sanitization ──────────────────────────────────────────────────────
 app.use(mongoSanitize());
 
-// ── Global rate limiter ──────────────────────────────────────────────────────
+// ── Request ID for tracing ────────────────────────────────────────────────────
+app.use((req, _res, next) => {
+  req.id = Math.random().toString(36).slice(2, 10);
+  next();
+});
+
+// ── Access log (structured) ───────────────────────────────────────────────────
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    if (res.statusCode >= 400) {
+      console.error(JSON.stringify({ id: req.id, method: req.method, url: req.url, status: res.statusCode, ms }));
+    } else {
+      console.log(JSON.stringify({ id: req.id, method: req.method, url: req.url, status: res.statusCode, ms }));
+    }
+  });
+  next();
+});
+
+// ── Rate limiters ─────────────────────────────────────────────────────────────
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
+  keyGenerator: (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
 });
 app.use('/api/', globalLimiter);
 
-// ── Strict rate limiter for write / auth-sensitive endpoints ─────────────────
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
+  keyGenerator: (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
 });
 app.use('/api/premium/subscribe', strictLimiter);
 app.use('/api/orders', strictLimiter);
 app.use('/api/launchpad', strictLimiter);
 
-// Routes
-app.use('/api', require('./routes/chart'));
-app.use('/api/orders', require('./routes/orders'));
-app.use('/api/blockchain', require('./routes/blockchain'));
-app.use('/api/helius', require('./routes/helius'));
-app.use('/api/birdeye', require('./routes/birdeye'));
-app.use('/api/portfolio', require('./routes/portfolio'));
-app.use('/api/alerts', require('./routes/alerts'));
-app.use('/api/copy-trade', require('./routes/copyTrade'));
-app.use('/api/launchpad', require('./routes/launchpad'));
-app.use('/api/premium', require('./routes/premium'));
+// ── Routes ────────────────────────────────────────────────────────────────────
+app.use('/api',             require('./routes/chart'));
+app.use('/api/orders',      require('./routes/orders'));
+app.use('/api/blockchain',  require('./routes/blockchain'));
+app.use('/api/helius',      require('./routes/helius'));
+app.use('/api/birdeye',     require('./routes/birdeye'));
+app.use('/api/portfolio',   require('./routes/portfolio'));
+app.use('/api/alerts',      require('./routes/alerts'));
+app.use('/api/copy-trade',  require('./routes/copyTrade'));
+app.use('/api/analytics',   require('./routes/analytics'));
+app.use('/api/launchpad',   require('./routes/launchpad'));
+app.use('/api/premium',     require('./routes/premium'));
 
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('[error]', err.message);
+// ── 404 for unknown API routes ────────────────────────────────────────────────
+app.use('/api/*path', (_req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+// ── Global error handler ──────────────────────────────────────────────────────
+app.use((err, req, res, _next) => {
+  console.error(JSON.stringify({ id: req.id, error: err.message, stack: err.stack?.split('\n')[1] }));
   const status = err.status || err.statusCode || 500;
   res.status(status).json({ error: err.message || 'Internal server error' });
 });
 
-// ── WebSocket server ────────────────────────────────────────────────────────
+// ── WebSocket server ──────────────────────────────────────────────────────────
 const wss = new WebSocket.Server({ server });
-
-// Map: uid -> Set of ws clients
-const clients = new Map();
+const clients = new Map(); // uid → Set<ws>
 
 wss.on('connection', async (ws, req) => {
-  const url = new URL(req.url, `http://localhost`);
+  const url = new URL(req.url, 'http://localhost');
   const token = url.searchParams.get('token');
 
   let uid = null;
@@ -101,10 +140,10 @@ wss.on('connection', async (ws, req) => {
     try {
       const decoded = await admin.auth().verifyIdToken(token);
       uid = decoded.uid;
-    } catch {}
+    } catch { /* anonymous connection — limited access */ }
   }
 
-  ws.uid = uid;
+  ws.uid     = uid;
   ws.isAlive = true;
 
   ws.on('message', (raw) => {
@@ -129,7 +168,7 @@ wss.on('connection', async (ws, req) => {
   }
 });
 
-// Heartbeat
+// Heartbeat — terminate stale connections every 30s
 setInterval(() => {
   wss.clients.forEach(ws => {
     if (!ws.isAlive) return ws.terminate();
@@ -138,7 +177,6 @@ setInterval(() => {
   });
 }, 30000);
 
-// Push event to specific user
 function pushToUser(uid, payload) {
   const userClients = clients.get(uid);
   if (!userClients) return;
@@ -149,29 +187,30 @@ function pushToUser(uid, payload) {
 }
 
 app.locals.pushToUser = pushToUser;
-app.locals.wss = wss;
+app.locals.wss        = wss;
 
-// ── Start ───────────────────────────────────────────────────────────────────
+// ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
   initFirebase();
   await connectDB();
-  // Note: Moralis removed — replace with Helius
   server.listen(PORT, () => {
-    console.log(`Server + WS running on port ${PORT}`);
+    console.log(JSON.stringify({ event: 'server_start', port: PORT, env: process.env.NODE_ENV }));
     alertChecker.start(pushToUser);
+    slTpChecker.start(pushToUser);
   });
 };
 
 start();
 
-// Graceful shutdown
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
 function shutdown(signal) {
-  console.log(`${signal} received — shutting down`);
+  console.log(JSON.stringify({ event: 'shutdown', signal }));
   alertChecker.stop();
+  slTpChecker.stop();
   server.close(() => {
-    console.log('HTTP server closed');
+    console.log(JSON.stringify({ event: 'server_closed' }));
     process.exit(0);
   });
   setTimeout(() => process.exit(1), 10000);
@@ -179,5 +218,8 @@ function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));
-process.on('unhandledRejection', (reason) => console.error('Unhandled rejection:', reason));
-process.on('uncaughtException',  (err)    => { console.error('Uncaught exception:', err.message); process.exit(1); });
+process.on('unhandledRejection', (reason) => console.error(JSON.stringify({ event: 'unhandledRejection', reason: String(reason) })));
+process.on('uncaughtException',  (err)    => {
+  console.error(JSON.stringify({ event: 'uncaughtException', error: err.message }));
+  process.exit(1);
+});

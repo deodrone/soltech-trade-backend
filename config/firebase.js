@@ -10,7 +10,7 @@ const initFirebase = () => {
 
   initializeApp({ credential: cert(serviceAccount) });
 
-  console.log('Firebase Admin initialized');
+  console.log(JSON.stringify({ event: 'firebase_initialized' }));
 };
 
 // Compatibility shim so existing callers keep working as admin.auth().verifyIdToken(...)

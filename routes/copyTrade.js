@@ -27,9 +27,16 @@ router.post('/', async (req, res) => {
 // PATCH /api/copy-trade/:id
 router.patch('/:id', async (req, res) => {
   try {
+    const { label, slippage, maxSol, tokens, active } = req.body;
+    const update = {};
+    if (label !== undefined)    update.label    = String(label).slice(0, 100);
+    if (slippage !== undefined)  update.slippage  = Math.min(Math.max(parseFloat(slippage) || 1, 0.1), 50);
+    if (maxSol !== undefined)    update.maxSol    = Math.min(Math.max(parseFloat(maxSol) || 0.1, 0.001), 100);
+    if (Array.isArray(tokens))   update.tokens    = tokens.slice(0, 50);
+    if (active !== undefined)    update.active    = Boolean(active);
     const config = await CopyTradeConfig.findOneAndUpdate(
       { _id: req.params.id, userId: req.user.uid },
-      req.body,
+      update,
       { new: true }
     );
     if (!config) return res.status(404).json({ error: 'Not found' });

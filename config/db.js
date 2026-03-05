@@ -10,10 +10,10 @@ const connectDB = async () => {
     maxPoolSize: 10,
   });
 
-  console.log(`MongoDB connected: ${conn.connection.host}`);
+  console.log(JSON.stringify({ event: 'mongo_connected', host: conn.connection.host }));
 
-  mongoose.connection.on('disconnected', () => console.warn('MongoDB disconnected'));
-  mongoose.connection.on('error', (err) => console.error('MongoDB error:', err.message));
+  mongoose.connection.on('disconnected', () => console.warn(JSON.stringify({ event: 'mongo_disconnected' })));
+  mongoose.connection.on('error', (err) => console.error(JSON.stringify({ event: 'mongo_error', error: err.message })));
 };
 
 module.exports = connectDB;
