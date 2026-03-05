@@ -22,6 +22,9 @@ const alertChecker  = require('./jobs/alertChecker');
 const slTpChecker   = require('./jobs/slTpChecker');
 
 const app    = express();
+
+// Trust nginx proxy (fixes express-rate-limit IPv6 validation + req.ip)
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 // ── Security headers ──────────────────────────────────────────────────────────
@@ -83,7 +86,6 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  keyGenerator: (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
 });
 app.use('/api/', globalLimiter);
 
@@ -93,7 +95,6 @@ const strictLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  keyGenerator: (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
 });
 app.use('/api/premium/subscribe', strictLimiter);
 app.use('/api/orders', strictLimiter);
