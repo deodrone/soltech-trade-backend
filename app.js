@@ -12,7 +12,6 @@ const express     = require('express');
 const cors        = require('cors');
 const helmet      = require('helmet');
 const compression = require('compression');
-const mongoSanitize = require('express-mongo-sanitize');
 const { rateLimit } = require('express-rate-limit');
 const http        = require('http');
 const WebSocket   = require('ws');
@@ -55,9 +54,6 @@ app.use(cors({
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50kb' }));
 app.use(express.urlencoded({ extended: false, limit: '50kb' }));
-
-// ── MongoDB sanitization ──────────────────────────────────────────────────────
-app.use(mongoSanitize());
 
 // ── Request ID for tracing ────────────────────────────────────────────────────
 app.use((req, _res, next) => {
