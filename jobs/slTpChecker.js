@@ -10,7 +10,7 @@
 const axios = require('axios');
 const Order = require('../models/Order');
 
-const JUPITER_PRICE      = 'https://api.jup.ag/price/v2';
+const JUPITER_PRICE      = 'https://lite-api.jup.ag/price/v3';
 const CHECK_INTERVAL_MS  = 30 * 1000;
 const BATCH_SIZE         = 100; // Jupiter supports up to 100 mints per call
 
@@ -21,7 +21,7 @@ async function fetchPrices(mints) {
   if (!mints.length) return {};
   try {
     const { data } = await axios.get(`${JUPITER_PRICE}?ids=${mints.join(',')}`, { timeout: 10000 });
-    return data.data || {};
+    return data || {};
   } catch {
     return {};
   }
@@ -49,7 +49,7 @@ async function runCheck() {
       const priceInfo = prices[order.symbol];
       if (!priceInfo) continue;
 
-      const price = parseFloat(priceInfo.price);
+      const price = parseFloat(priceInfo.usdPrice);
       if (!price) continue;
 
       let triggerType = null;

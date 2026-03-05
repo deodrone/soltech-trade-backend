@@ -10,4 +10,6 @@ const CopyTradeConfigSchema = new mongoose.Schema({
   active:        { type: Boolean, default: true },
 }, { timestamps: true });
 
+CopyTradeConfigSchema.index({ userId: 1, active: 1 });
+
 module.exports = mongoose.model('CopyTradeConfig', CopyTradeConfigSchema);

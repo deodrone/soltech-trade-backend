@@ -24,7 +24,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create deployment zip (EB runs npm install — no node_modules needed)
+      - name: Wait for EB environment to be Ready
+        run: |
+          echo "Checking EB environment status..."
+          for i in $(seq 1 20); do
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --region us-east-1 \
+              --environment-names soltech-trade-backend-env \
+              --query 'Environments[0].Status' \
+              --output text 2>/dev/null)
+            echo "  Status: $STATUS (attempt $i/20)"
+            if [ "$STATUS" = "Ready" ]; then
+              echo "Environment is Ready ✓"
+              break
+            fi
+            if [ "$i" = "20" ]; then
+              echo "Timed out waiting for environment to be Ready"
+              exit 1
+            fi
+            sleep 30
+          done
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    us-east-1
+
+      - name: Create deployment zip
         run: |
           zip -r deploy.zip . \
             --exclude "*.git*" \
@@ -36,21 +61,23 @@ jobs:
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
         with:
-          aws_access_key:   ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_key:   ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          application_name: soltech-trade-backend
-          environment_name: soltech-trade-backend-env
-          region: us-east-1
-          version_label:    "deploy-${{ github.sha }}"
-          deployment_package: deploy.zip
-          wait_for_environment_recovery: 120
+          aws_access_key:            ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key:            ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name:          soltech-trade-backend
+          environment_name:          soltech-trade-backend-env
+          region:                    us-east-1
+          version_label:             "deploy-${{ github.sha }}"
+          deployment_package:        deploy.zip
+          wait_for_environment_recovery: 180
 
       - name: Health check
         run: |
-          sleep 20
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.BACKEND_URL }}/health")
-          echo "Health check returned: $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "Health check failed!"
-            exit 1
-          fi
+          sleep 15
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.BACKEND_URL }}/health")
+            echo "Health check $i returned: $STATUS"
+            if [ "$STATUS" = "200" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "Health check failed after 3 attempts"
+          exit 1

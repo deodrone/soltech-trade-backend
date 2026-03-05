@@ -1,7 +1,7 @@
 const axios = require('axios');
 const Alert = require('../models/Alert');
 
-const JUPITER_PRICE = 'https://api.jup.ag/price/v2';
+const JUPITER_PRICE = 'https://lite-api.jup.ag/price/v3';
 const CHECK_INTERVAL_MS = 30 * 1000; // 30 seconds
 const RETRIGGER_COOLDOWN_MS = 5 * 60 * 1000; // 5 min cooldown per alert
 
@@ -13,7 +13,7 @@ async function fetchPrices(mints) {
   if (!mints.length) return {};
   try {
     const { data } = await axios.get(`${JUPITER_PRICE}?ids=${mints.join(',')}`, { timeout: 10000 });
-    return data.data || {};
+    return data || {};
   } catch {
     return {};
   }
@@ -45,7 +45,7 @@ async function runCheck() {
       const priceInfo = prices[alert.mint];
       if (!priceInfo) continue;
 
-      const currentPrice = parseFloat(priceInfo.price);
+      const currentPrice = parseFloat(priceInfo.usdPrice);
       if (!currentPrice) continue;
 
       // Respect cooldown — don't spam the same alert
